@@ -6,6 +6,7 @@ import json
 import os
 import requests
 import signal
+import stat
 import sys
 import uuid
 
@@ -17,13 +18,28 @@ CONVERSATIONS_DIR = Path('~/.openai/conversations/').expanduser()
 HEADERS = {}
 
 def signal_handler(signal, frame):
+    if interactive_mode and conversation_file:
+        print('')
+        print(f'Conversation stored in {conversation_file}')
     print('')
     sys.exit(0)
 
 def load_api_key() -> str:
-    with API_KEY_PATH.open('r') as f:
-        return f.read().strip()
+    if not API_KEY_PATH.exists():
+        print('Error: API key file not found at the specified location.')
+        print('Please ensure that your API key is located at ~/.openai/apikey')
+        sys.exit(1)
 
+    if API_KEY_PATH.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        print('Error: API key file should not be accessible '
+              '(readable, writable, or executable) by anyone '
+              'other than the user.')
+        sys.exit(1)
+
+    with API_KEY_PATH.open('r') as f:
+        api_key = f.read().strip()
+
+    return api_key
 
 def get_chat_input(prompt: str) -> str:
     sys.stdout.write(prompt)
@@ -32,7 +48,11 @@ def get_chat_input(prompt: str) -> str:
 
 def generate_slogan(prompt: str) -> str:
     conversation_history = \
-        [ {'role' : 'system', 'content' : 'Summarize text in max three words'}, \
+        [ {'role' : 'system',
+           'content' :
+           'Summarize this text in max three words. The summary should provide '
+           'the clearest possible understanding of the text in this minimal '
+           'format.'},
           {'role' : 'user', 'content' : prompt} ]
 
     response = send_gpt_request(
@@ -44,8 +64,8 @@ def generate_slogan(prompt: str) -> str:
     # Post-processing
     response = response.lower()
     response = ''.join(c for c in response if c.isalpha() or c.isspace())
-    slogan = response.strip().replace(" ", "_")
-    
+    slogan = response.strip().replace(' ', '_')
+
     return slogan
 
 
@@ -87,12 +107,13 @@ def print_response_data(data: dict) -> None:
 
 def main():
     HEADERS['Authorization'] = f'Bearer {load_api_key()}'
-    current_date = datetime.now().strftime('%Y-%m-%d')
-    current_time = datetime.now().strftime("%H-%M-%S")
-    timestamp = datetime.now().isoformat()
     CONVERSATIONS_DIR.mkdir(parents=True, exist_ok=True)
+    global conversation_file
+    conversation_file = None
+    global interactive_mode
+    interactive_mode = sys.stdin.isatty()
 
-    if sys.stdin.isatty():
+    if interactive_mode:
         message = get_chat_input('You: ')
     else:
         message = sys.stdin.read().strip()
@@ -104,8 +125,13 @@ def main():
     else:
         conversation_history = [{'role': 'system', 'content': args.system}]
         slogan = generate_slogan(message)
-        filename = f'{timestamp}_{slogan}.json'
-    
+        filename = f'{slogan}.json'
+
+         # Append an incrementing integer if filename already exists
+        counter = 1
+        while (CONVERSATIONS_DIR / filename).exists():
+            filename = f'{slogan}_{counter}.json'
+            counter += 1
 
     while True:
         conversation_history.append({'role': 'user', 'content': message})
@@ -117,25 +143,44 @@ def main():
         )
         conversation_history.append({'role': 'assistant', 'content': response})
         print(f'ChatGPT: {response}')
-        
-        with (CONVERSATIONS_DIR / filename).open('w') as f:
-            json.dump(conversation_history, f, indent=2)
 
-        if not sys.stdin.isatty():
+        if interactive_mode:
+            conversation_file = (CONVERSATIONS_DIR / filename)
+            with conversation_file.open('w') as f:
+                json.dump(conversation_history, f, indent=2)
+
+        if not interactive_mode:
             # one shot, piped input
             break
 
         message = get_chat_input('You: ')
 
 if __name__ == '__main__':
+    conversation_file = None
+    interactive_mode = False
     signal.signal(signal.SIGINT, signal_handler)
 
     parser = argparse.ArgumentParser(description='Interact with ChatGPT.')
-    parser.add_argument('-t', '--temperature', type=float, default=1.0, help='Temperature for GPT response.')
-    parser.add_argument('-s', '--system', type=str, default='You are a helpful assistant', help='System message to start the conversation.')
-    parser.add_argument('-l', '--token_limit', type=int, default=None, help='Token limit for GPT response.')
-    parser.add_argument('-f', '--file', type=str, help='Path to the conversation file to continue.')
-    parser.add_argument('-d', '--debug', action='store_true', default=False, help='Print headers and bodies sent over HTTP.')
+
+    parser.add_argument('-t', '--temperature',
+                        type=float,
+                        default=1.0,
+                        help='Temperature for GPT response.')
+    parser.add_argument('-s', '--system',
+                        type=str,
+                        default='You are a helpful assistant',
+                        help='System message to start the conversation.')
+    parser.add_argument('-l', '--token_limit',
+                        type=int,
+                        default=None,
+                        help='Token limit for GPT response.')
+    parser.add_argument('-f', '--file',
+                        type=str,
+                        help='Path to the conversation file to continue.')
+    parser.add_argument('-d', '--debug',
+                        action='store_true',
+                        default=False,
+                        help='Print headers and bodies sent over HTTP.')
 
     args = parser.parse_args()
 
