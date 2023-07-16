@@ -12,7 +12,7 @@ import uuid
 
 # Constants
 API_BASE_URL = 'https://api.openai.com/v1/chat/completions'
-API_MODEL = 'gpt-3.5-turbo'
+API_DEFAULT_MODEL = 'gpt-3.5-turbo'
 API_KEY_PATH = Path('~/.openai/apikey').expanduser()
 CONVERSATIONS_DIR = Path('~/.openai/conversations/').expanduser()
 HEADERS = {}
@@ -58,7 +58,8 @@ def generate_slogan(prompt: str) -> str:
     response = send_gpt_request(
         conversation_history=conversation_history,
         temperature=0.7,
-        max_tokens=10
+        max_tokens=10,
+        model=API_DEFAULT_MODEL
     )
 
     # Post-processing
@@ -69,10 +70,10 @@ def generate_slogan(prompt: str) -> str:
     return slogan
 
 
-def send_gpt_request(conversation_history, max_tokens : int, temperature: float) -> str:
+def send_gpt_request(conversation_history, max_tokens : int, temperature: float, model: str) -> str:
     data = {
         'messages' : conversation_history,
-        'model' : API_MODEL,
+        'model' : model,
         'temperature': temperature
     }
 
@@ -139,7 +140,8 @@ def main():
         response = send_gpt_request(
             conversation_history=conversation_history,
             temperature=args.temperature,
-            max_tokens=args.token_limit
+            max_tokens=args.token_limit,
+            model=args.model
         )
         conversation_history.append({'role': 'assistant', 'content': response})
         print(f'ChatGPT: {response}')
@@ -177,6 +179,10 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--file',
                         type=str,
                         help='Path to the conversation file to continue.')
+    parser.add_argument('-m', '--model',
+                        type=str,
+                        default=API_DEFAULT_MODEL,
+                        help='Chat GPT model')
     parser.add_argument('-d', '--debug',
                         action='store_true',
                         default=False,
