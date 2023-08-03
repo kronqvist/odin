@@ -151,7 +151,11 @@ def main():
             model=args.model
         )
         conversation_history.append({'role': 'assistant', 'content': response})
-        print(f'ChatGPT: {response}')
+
+        if interactive_mode:
+            print(f'{args.model}: {response}')
+        else:
+            print(f'{response}')
 
         if interactive_mode:
             conversation_file = (CONVERSATIONS_DIR / filename)
