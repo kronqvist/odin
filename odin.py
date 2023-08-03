@@ -25,9 +25,15 @@ def signal_handler(signal, frame):
     sys.exit(0)
 
 def load_api_key() -> str:
+    # Check for the API key in the OPENAI_APIKEY environment variable first
+    api_key = os.environ.get('OPENAI_APIKEY')
+    if api_key:
+        return api_key.strip()
+
+    # If not found in the environment variable, proceed to look in the file
     if not API_KEY_PATH.exists():
-        print('Error: API key file not found at the specified location.')
-        print('Please ensure that your API key is located at ~/.openai/apikey')
+        print('Error: API key not found in environment variable and file not found at the specified location.')
+        print('Please ensure that your API key is located at ~/.openai/apikey or set in the OPENAI_APIKEY environment variable.')
         sys.exit(1)
 
     if API_KEY_PATH.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
@@ -40,6 +46,7 @@ def load_api_key() -> str:
         api_key = f.read().strip()
 
     return api_key
+
 
 def get_chat_input(prompt: str) -> str:
     sys.stdout.write(prompt)
